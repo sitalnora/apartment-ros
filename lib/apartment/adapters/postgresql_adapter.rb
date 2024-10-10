@@ -77,7 +77,6 @@ module Apartment
         end
 
         @current = tenant.is_a?(Array) ? tenant.map(&:to_s) : tenant.to_s
-        @current_schema = db_connection_config(tenant)[:schema] || tenant.to_s
         if ($0 =~ /rake$/) || (defined?($apartment_force_connection) && $apartment_force_connection)
           Apartment.connection.schema_search_path = full_search_path
         end
