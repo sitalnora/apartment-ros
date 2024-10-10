@@ -124,7 +124,7 @@ module Apartment
       end
 
       def persistent_schemas
-        [@current_schema || @current, Apartment.persistent_schemas].flatten
+        [@current, Apartment.persistent_schemas].flatten
       end
 
       def postgresql_version
