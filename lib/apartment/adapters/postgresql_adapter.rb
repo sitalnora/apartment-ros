@@ -72,10 +72,14 @@ module Apartment
       #
       def connect_to_new(tenant = nil)
         return reset if tenant.nil?
-        raise ActiveRecord::StatementInvalid, "Could not find schema #{tenant}" unless schema_exists?(tenant)
+        if ($0 =~ /rake$/) || (defined?($apartment_force_connection) && $apartment_force_connection)
+          Apartment.establish_connection multi_tenantify(tenant, false)
+        end
 
         @current = tenant.is_a?(Array) ? tenant.map(&:to_s) : tenant.to_s
-        Apartment.connection.schema_search_path = full_search_path
+        if ($0 =~ /rake$/) || (defined?($apartment_force_connection) && $apartment_force_connection)
+          Apartment.connection.schema_search_path = full_search_path
+        end
 
         # When the PostgreSQL version is < 9.3,
         # there is a issue for prepared statement with changing search_path.
@@ -179,6 +183,8 @@ module Apartment
       #
       def clone_pg_schema
         pg_schema_sql = patch_search_path(pg_dump_schema)
+        pg_schema_sql = pg_schema_sql.gsub("#{default_tenant}.", "#{current}.")
+        pg_schema_sql = pg_schema_sql.gsub("#{current}.hstore", "public.hstore")
         Apartment.connection.execute(pg_schema_sql)
       end
 
@@ -186,6 +192,7 @@ module Apartment
       #
       def copy_schema_migrations
         pg_migrations_data = patch_search_path(pg_dump_schema_migrations_data)
+        pg_migrations_data = pg_migrations_data.gsub("#{default_tenant}.", "#{current}.")
         Apartment.connection.execute(pg_migrations_data)
       end
 
@@ -202,7 +209,7 @@ module Apartment
 
         # `pg_dump -s -x -O -n #{default_tenant} #{excluded_tables} #{dbname}`
 
-        with_pg_env { `pg_dump -s -x -O -n #{default_tenant} #{dbname}` }
+        with_pg_env { `pg_dump -s -x -O -n #{default_tenant} #{@config[:database]}` }
       end
 
       #   Dump data from schema_migrations table
@@ -211,7 +218,7 @@ module Apartment
       #
       # rubocop:disable Layout/LineLength
       def pg_dump_schema_migrations_data
-        with_pg_env { `pg_dump -a --inserts -t #{default_tenant}.schema_migrations -t #{default_tenant}.ar_internal_metadata #{dbname}` }
+        with_pg_env { `pg_dump -a --inserts -t schema_migrations -t ar_internal_metadata -n #{default_tenant} #{@config[:database]}` }
       end
       # rubocop:enable Layout/LineLength
 
@@ -242,7 +249,7 @@ module Apartment
       #
       def patch_search_path(sql)
         search_path = "SET search_path = \"#{current}\", #{default_tenant};"
-
+        sql.gsub!("CREATE SCHEMA #{default_tenant};", "")
         swap_schema_qualifier(sql)
           .split("\n")
           .select { |line| check_input_against_regexps(line, PSQL_DUMP_BLACKLISTED_STATEMENTS).empty? }
